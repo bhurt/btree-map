@@ -13,15 +13,18 @@ IMPORTANT NOTICE: This is an internal module to this package, and not
 intended for external use.  It is subject to change without notice,
 even in minor releases.  Use at your own risk.
 
-The core data structure used by btree-map is the block.  We want to split
-blocks into peices, and then recombine them.  We'd like to be able to 
-abstract as much of the splitting and recombining as possible.
+The core data structure used by btree-map is the block.  There are
+two types of blocks.  A leaf block contains an array of n values
+and an array of n-1 keys- the first (minimum) key is kept in the
+next level up, so that any give key is only stored once.  A branch
+block contains an array of n child blocks, an array of n-1 keys (the
+first key being kept one level up), and an array of n sizes.
 
-Unfortunately, we actually want two different types of block.  A leaf block
-is an array of keys and an array of values.  A branch block is an array of
-keys, and array of sub-blocks, and an array of sizes.  The two different
-types of blocks made up of different numbers of arrays makes it hard to
-abstract a common structure.
+We want to split blocks into peices, and then recombine them.  We'd
+like to be able to abstract as much of the splitting and recombining
+as possible.  Unfortunately, the two different types of block with
+two different numbers of arrays (2 for leaf blocks, 3 for branch blocks)
+make having any sort of shared abstract structure too hard.
 
 Fortunately, we don't really need to.  We introduce the notion of a splice-
 some underlying abstract value (which in practice will be either a leaf
@@ -139,6 +142,10 @@ module Data.Map.BTree.Internal.Splice (
             spliceOffset =  spliceOffset splice + n,
             spliceCount = spliceCount splice - n }
 
+    -- | Create a new splice list which is the first n elements of
+    -- a given splice list.
+    --
+    -- Equalivalent to take for lists.
     takeSpliceList :: Int -> [ Splice a ] -> [ Splice a ]
     takeSpliceList _ [] = assert False [] -- We should never get here
     takeSpliceList n (x : xs) =
