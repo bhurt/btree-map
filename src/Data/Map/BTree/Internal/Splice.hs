@@ -1,4 +1,6 @@
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-|
 Module          : Data.Map.BTree.Internal.Block
@@ -54,14 +56,16 @@ module Data.Map.BTree.Internal.Splice (
     dropSpliceList,
     splitAtSpliceList,
     balanceSplices,
-    Arrayish(..),
-    spliceListToArrayish,
-    spliceListToKeyArrayish,
+    spliceListToSmallArray,
+    spliceListToKeySmallArray,
     partitionBlocks
 ) where
 
-    import           Control.Exception         (assert)
-    import qualified Data.List                 as List
+    import           Control.Exception                 (assert)
+    import           Control.Monad                     (when)
+    import           Control.Monad.ST
+    import qualified Data.List                         as List
+    import           Data.Map.BTree.Internal.Constants
     import           Data.Primitive.SmallArray
 
     -- | A splice, a sub-part of some underlying block.
@@ -111,7 +115,7 @@ module Data.Map.BTree.Internal.Splice (
     -- Used in asserts
     validSplice :: Splice a -> Bool
     validSplice splice = (spliceOffset splice >= 0)
-                            && (spliceCount > 0)
+                            && (spliceCount splice > 0)
 
     -- | Create a new splice which is the first n elements of a given splice.
     --
@@ -172,7 +176,9 @@ module Data.Map.BTree.Internal.Splice (
             else dropSpliceList (n - spliceCount x) xs
 
     splitAtSpliceList :: Int -> [ Splice a ] -> ([ Splice a ], [ Splice a ])
-    splitAtSpliceList _ [] = assert False [] -- We should never get here
+    splitAtSpliceList _ [] = -- We should never get here
+        assert False $
+            error "splitAtSpliceList should not be given an empty list."
     splitAtSpliceList n (x : xs) =
         assert (validSplice x) $
         assert (n > 0) $
@@ -200,34 +206,16 @@ module Data.Map.BTree.Internal.Splice (
         assert (i < spliceCount splice) $
         f (spliceValue splice) (i + spliceOffset splice)
 
-    class Arrayish f where
-        type MutableArrayish f :: * -> * -> *
-        runArrayish :: (forall s . ST s (MutableArrayish f s a)) -> f a
-        newArrayish :: Int -> ST s (MutableArrayish f s a)
-        writeArrayish :: MutableArrayish f s a -> Int -> a -> ST s ()
-        copyArrayish :: MutableArrayish f s a -> Int -> f a -> Int
-                            -> Int -> ST s ()
-        indexArrayish :: f a -> Int -> a
 
-    instance Arrayish SmallArray where
-        type MutableArrayish SmallArray = SmallMutableArray
-        runArrayish = runSmallArray
-        newArrayish sz = newSmallArray sz undefined
-        writeArrayish = writeSmallArray
-        copyArrayish = copySmallArray
-
-    -- TODO: Add Arrayish instances for Arrays and UnboxedArrays
-
-    spliceListToArrayish :: forall f a b .
-                                Arrayish f
-                                => (a -> f b)
+    spliceListToSmallArray :: forall a b .
+                                (a -> SmallArray b)
                                 -> [ Splice a ]
-                                -> f b
-    spliceListToArrayish f splices =
+                                -> SmallArray b
+    spliceListToSmallArray f splices =
             assert splicesNotEmpty $
             assert (totalCount > 0) $
-            runArrayish $ do
-                arr <- newArrayish totalCount
+            runSmallArray $ do
+                arr <- newSmallArray totalCount undefined
                 go arr 0 splices
                 return arr
         where
@@ -239,20 +227,19 @@ module Data.Map.BTree.Internal.Splice (
             totalCount :: Int
             totalCount = spliceListLength splices
 
-            go :: MutableArrayish f s b -> Int -> [ Splice a ] -> St s ()
+            go :: SmallMutableArray s b -> Int -> [ Splice a ] -> ST s ()
             go _   _   []       = return ()
             go arr idx (x : xs) =
                 assert (validSplice x) $ do
                 let n = spliceCount x
-                copyArrayish arr idx (f (spliceValue x)) (spliceOffset x) n
+                copySmallArray arr idx (f (spliceValue x)) (spliceOffset x) n
                 go arr (idx + n) xs
 
-    spliceListToKeyArrayish :: forall f a b .
-                                    Arrayish f
-                                    => (a -> (b, f b))
+    spliceListToKeySmallArray :: forall a b .
+                                    (a -> (b, SmallArray b))
                                     -> [ Splice a ]
-                                    -> (b, f b)
-    spliceListToKeyArrayish f = 
+                                    -> (b, SmallArray b)
+    spliceListToKeySmallArray f splices = 
             assert splicesNotEmpty $
             assert (totalCount > 0) $
             (k0, ks)
@@ -268,20 +255,50 @@ module Data.Map.BTree.Internal.Splice (
             k0 :: b
             k0 = case splices of
                     []    -> assert False $ error "Unreachable code reached"
-                    (x:_) -> spliceIndex foo x 0
+                    (splice:_) -> 
+                        assert (spliceCount splice > 0) $
+                        let (s1, ss) = f (spliceValue splice) in
+                        if (spliceOffset splice == 0)
+                        then s1
+                        else indexSmallArray ss (spliceOffset splice - 1)
 
-            foo :: a -> Int -> b
-            foo a i = 
-                assert (i >= 0) $
-                let (b0, bs) = f a in
-                if i == 0
-                then b0
-                else indexArrayish bs (i - 1)
+            ks :: SmallArray b
+            ks = runSmallArray go
 
-            ks :: f b
-            ks = if totalCount == 1
-                    then runArrayish $ newArrayish 0
-                    else spliceListToArrayish f $ dropSpliceList 1 splices
+            go :: forall s . ST s (SmallMutableArray s b)
+            go = do
+                arr <- newSmallArray (totalCount - 1) undefined
+                case splices of
+                    []    -> assert False $ error "Unreachable code reached"
+                    (splice:more) -> 
+                        assert (spliceCount splice > 0) $
+                        if (spliceCount splice > 1)
+                        then do
+                            let (_, ss) = f (spliceValue splice)
+                            copySmallArray arr 0 ss (spliceOffset splice)
+                                    (spliceCount splice - 1)
+                            go2 arr (spliceCount splice - 1) more
+                        else go2 arr 0 more
+
+            go2 :: forall s .
+                        SmallMutableArray s b
+                        -> Int
+                        -> [ Splice a ]
+                        -> ST s (SmallMutableArray s b)
+            go2 arr _   []            = return arr
+            go2 arr off (splice:more) =
+                assert (spliceCount splice > 0) $ do
+                let (s, ss) = f (spliceValue splice)
+                if (spliceOffset splice == 0)
+                then do
+                    writeSmallArray arr off s
+                    when (spliceCount splice > 1) $ do
+                        copySmallArray arr (off + 1) ss 0
+                                (spliceCount splice - 1)
+                else
+                    copySmallArray arr off ss (spliceOffset splice - 1)
+                        (spliceCount splice)
+                go2 arr (off + spliceCount splice) more
 
     data BalanceBlock = BalanceBlock {
                             extraElems :: Int,
@@ -301,7 +318,7 @@ module Data.Map.BTree.Internal.Splice (
             offset = optSize `quot` 2
 
             nBlocks :: Int
-            nBlocks = assert (n > 0) $ (n + off) `quot` optSize
+            nBlocks = assert (n > 0) $ (n + offset) `quot` optSize
 
             -- We want to partition things into extraSize blocks of
             -- (base + 1) elements, and (nBlocks - extraSize)
@@ -323,7 +340,7 @@ module Data.Map.BTree.Internal.Splice (
             n = spliceListLength splices
 
             balance :: BalanceBlock
-            balance = balanceBlocks n
+            balance = balanceBlock n
 
             foo :: Int -> [ Splice a ] -> [ [ Splice a ] ]
             foo _ [] = []
@@ -347,7 +364,7 @@ module Data.Map.BTree.Internal.Splice (
 
             go :: [ a ] -> [ [ a ] ]
             go lst =
-                if (atLeast (2 * maxSize) lst)
+                if (atLeast (3 * optSize) lst)
                 then
                     let (h, t) = List.splitAt optSize lst in
                     h : go t
