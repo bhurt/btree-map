@@ -55,3 +55,12 @@ module Data.Map.BTree (
                         Left  zs  -> uncurry Block $ makeBranch zs 
                         Right zzs -> go $ makeBranch <$> zzs
 
+    fromAscList :: Ord k => [(k,v)] -> Map k v
+    fromAscList = fromAscListUnchecked . checkArray
+        where
+            checkArray ((k0, v0) : (kvs@((k1, _) : _))) =
+                if (k0 < k1)
+                then (k0, v0) : checkArray kvs
+                else error "fromAscList: list is not strictly ascending!"
+            checkArray kvs = kvs
+
