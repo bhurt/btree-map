@@ -9,7 +9,6 @@ module Data.Map.BTree.Internal.Branch (
 
     import           Control.Exception             (assert)
     import           Data.Map.BTree.Internal.Class
-    import           Data.Map.BTree.Internal.Splice
     import           Data.Primitive.SmallArray
 
     data Branch c k v = Branch {
@@ -76,6 +75,7 @@ module Data.Map.BTree.Internal.Branch (
                                     branchChildren = ca,
                                     branchSizes = sa })
 
+    {-
     spliceFromBranch :: BTree c => (k, Branch c k v)
                                 -> Splice (k, Branch c k v)
     spliceFromBranch branch = makeSplice (getSize branch) branch
@@ -104,3 +104,4 @@ module Data.Map.BTree.Internal.Branch (
     rebalanceBranches bs  = branchFromSpliceList <$>
                                 balanceSplices (spliceFromBranch <$> bs)
 
+    -}
