@@ -4,6 +4,9 @@ module Data.Map.BTree (
     Map,
     empty,
     singleton,
+    fromAscListUnchecked,
+    fromAscList,
+    Data.Map.BTree.lookup
 ) where
 
     import           Control.Exception              (assert)
@@ -19,7 +22,6 @@ module Data.Map.BTree (
     singleton :: k -> v -> Map k v
     singleton = Singleton
 
-    
     fromAscListUnchecked :: [(k,a)] -> Map k a
     fromAscListUnchecked []         = Empty
     fromAscListUnchecked [ (k, v) ] = Singleton k v
