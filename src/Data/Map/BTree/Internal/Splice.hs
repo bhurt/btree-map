@@ -380,6 +380,6 @@ module Data.Map.BTree.Internal.Splice (
                 h : go2 sz 0 t
             go2 sz ext xs =
                 let (h, t) = List.splitAt (sz + 1) xs in
-                h : go2 sz (ext-1) xs
+                h : go2 sz (ext-1) t
 
 
