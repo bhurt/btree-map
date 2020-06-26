@@ -14,6 +14,36 @@ module Data.Map.BTree.Internal.Leaf (
         leafVals :: SmallArray v
     }
 
+    instance BTree Leaf where
+        type Child Leaf k v = v
+
+        getSize (_, leaf) =
+            let n = sizeofSmallArray (leafVals leaf) in
+            assert (sizeofSmallArray (leafKeys leaf) == n - 1) n
+
+        doLookup k kleaf = loop 0
+            where
+                n :: Int
+                n = getSize kleaf
+
+                loop i
+                    | i < n     =
+                        let ki = getKey kleaf i in
+                        case compare k ki of
+                            LT -> loop (i + 1)
+                            EQ -> Just (getVal kleaf i)
+                            GT -> Nothing
+                    | otherwise = Nothing
+
+
+    getKey :: (k, Leaf k v) -> Int -> k
+    getKey (k, leaf) i
+        | i == 0    = k
+        | otherwise = indexSmallArray  (leafKeys leaf) (i - 1)
+
+    getVal :: (k, Leaf k v) -> Int -> v
+    getVal (_, leaf) i = indexSmallArray (leafVals leaf) i
+
     makeLeaf :: [ (k, v) ] -> (k, Leaf k v)
     makeLeaf xs =
         case (fst <$> xs) of
@@ -25,12 +55,4 @@ module Data.Map.BTree.Internal.Leaf (
                 in
                 (k, Leaf {  leafKeys = ka,
                             leafVals = va })
-
-    instance BTree Leaf where
-        type Child Leaf k v = v
-
-        getSize (_, leaf) =
-            let n = sizeofSmallArray (leafVals leaf) in
-            assert (sizeofSmallArray (leafKeys leaf) == n - 1) n
-
 

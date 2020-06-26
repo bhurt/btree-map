@@ -22,11 +22,45 @@ module Data.Map.BTree.Internal.Branch (
         type Child (Branch c) k v = c k v
 
         getSize (_, branch) =
-            assert (sizeofSmallArray (branchKeys branch)
-                        == sizeofSmallArray (branchChildren branch) - 1) $
-            assert (sizeofSmallArray (branchChildren branch)
-                        == sizeofSmallArray (branchSizes branch)) $
+            assert (checkBranch branch) $
             sum (branchSizes branch)
+
+        doLookup k branch =
+                assert (checkBranch (snd branch)) $
+                loop 0
+            where
+                n :: Int
+                n = getLength branch
+
+                loop i
+                    | i < (n - 1) =
+                        let ki1 = getKey branch (i + 1) in
+                        if k < ki1
+                        then doLookup k (getKey branch i, getChild branch i)
+                        else loop (i + 1)
+                    | otherwise =
+                        doLookup k (getKey branch i, getChild branch i)
+
+
+    getLength :: (k, Branch c k v) -> Int
+    getLength (_, branch) = sizeofSmallArray (branchChildren branch)
+
+    getKey :: (k, Branch c k v) -> Int -> k
+    getKey (k, branch) i
+        | i == 0 = k
+        | otherwise = indexSmallArray (branchKeys branch) (i - 1)
+
+    getChild :: (k, Branch c k v) -> Int -> c k v
+    getChild (_, branch) i = indexSmallArray (branchChildren branch) i
+
+        
+    checkBranch :: Branch c k v -> Bool
+    checkBranch branch = 
+            (sizeofSmallArray (branchKeys branch)
+                        == sizeofSmallArray (branchChildren branch) - 1)
+            && (sizeofSmallArray (branchChildren branch)
+                        == sizeofSmallArray (branchSizes branch))
+
 
     makeBranch :: BTree c => [ (k, c k v) ] -> (k, Branch c k v)
     makeBranch xs =
