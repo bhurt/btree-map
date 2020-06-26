@@ -5,14 +5,22 @@ module Data.Map.BTree.Internal.Leaf (
     makeLeaf
 ) where
 
+    import           Control.DeepSeq
     import           Control.Exception             (assert)
     import           Data.Map.BTree.Internal.Class
+    import           Data.Map.BTree.Internal.Util
     import           Data.Primitive.SmallArray
 
     data Leaf k v = Leaf {
         leafKeys :: SmallArray k,
         leafVals :: SmallArray v
     }
+
+    instance NFData2 Leaf where
+        liftRnf2 fk fv b =
+            forceSmallArray fk (leafKeys b)
+            `seq` forceSmallArray fv (leafVals b)
+            `seq` ()
 
     instance BTree Leaf where
         type Child Leaf k v = v

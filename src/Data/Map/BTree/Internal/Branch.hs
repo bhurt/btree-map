@@ -7,8 +7,10 @@ module Data.Map.BTree.Internal.Branch (
     makeBranch
 ) where
 
+    import           Control.DeepSeq
     import           Control.Exception             (assert)
     import           Data.Map.BTree.Internal.Class
+    import           Data.Map.BTree.Internal.Util
     import           Data.Primitive.SmallArray
 
     data Branch c k v = Branch {
@@ -16,6 +18,13 @@ module Data.Map.BTree.Internal.Branch (
         branchChildren :: SmallArray (c k v),
         branchSizes :: SmallArray Int
     }
+
+    instance NFData2 c => NFData2 (Branch c) where
+        liftRnf2 fk fv b =
+            forceSmallArray fk (branchKeys b)
+            `seq` forceSmallArray rwhnf (branchSizes b)
+            `seq` forceSmallArray (liftRnf2 fk fv) (branchChildren b)
+            `seq` ()
 
     instance BTree c => BTree (Branch c) where
         type Child (Branch c) k v = c k v
