@@ -26,7 +26,18 @@ library
   build-depends:       base >= 4.7 && < 5
                         , primitive
   default-language:    Haskell2010
+  ghc-options:         -O2 -W -Wall -Werror -Wincomplete-uni-patterns -Wincomplete-record-updates -fignore-asserts
 
 source-repository head
   type:     git
-  location: https://github.com/githubuser/btree-map
+  location: https://github.com/bhurt/btree-map
+
+executable btree-benchmark
+  hs-source-dirs:      benchmark
+  main-is:             Main.hs
+  build-depends:       base >= 4.7 && < 5
+                        , containers
+                        , criterion
+  default-language:    Haskell2010
+  ghc-options:         -static -O2 -W -Wall -Werror -Wincomplete-uni-patterns -Wincomplete-record-updates -fignore-asserts
+
