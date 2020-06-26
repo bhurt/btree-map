@@ -64,3 +64,10 @@ module Data.Map.BTree (
                 else error "fromAscList: list is not strictly ascending!"
             checkArray kvs = kvs
 
+    lookup :: Ord k => k -> Map k v -> Maybe v
+    lookup _ Empty = Nothing
+    lookup k (Singleton k1 v1)
+        | k == k1   = Just v1
+        | otherwise = Nothing
+    lookup k (Block k1 block) = doLookup k (k1, block)
+
